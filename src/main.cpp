@@ -4,7 +4,7 @@
 
 // array of glow times for each 8bit ADC value
 const uint8_t glow_data[256] = {30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,29,27,26,25,23,22,21,20,20,19,18,17,17,16,16,15,15,14,14,13,13,12,12,12,11,11,11,11,10,10,10,10,9,9,9,9,9,8,8,8,8,8,8,8,7,7,7,7,7,7,7,7,6,6,6,6,6,6,6,6,6,6,6,6,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,0,0,0,0,0,0,0,0,0};
-const uint8_t safety_delay = 30;
+const uint32_t safety_delay = 30 * 1000;
 uint8_t crank = 0;
 volatile uint32_t timer1_millis;
 
@@ -60,6 +60,8 @@ void init_ADC()
             (1 << ADPS2) |     // set prescaler to 64, bit 2 
             (1 << ADPS1) |     // set prescaler to 64, bit 1 
             (0 << ADPS0);      // set prescaler to 64, bit 0  
+
+  DIDR0 |= (1 << ADC2D); //disable di on ADC pin
 }
 
 void init_millis() {
@@ -89,9 +91,13 @@ unsigned long millis(void) {
 
 int main() {
   DDRB |= (1<<DDB4); //PB4 as output
-  DIDR0 |= (1 << ADC2D); //disable di on ADC pin
+  PORTB |= (1<<PB4); // Turn on relay pin
     
   init_ADC();
+  cli();
+  init_crank_interrupt();
+  init_millis();
+  sei();
 
   _delay_ms(100); //let voltage settle out.
 
@@ -105,29 +111,22 @@ int main() {
     count++;
     _delay_ms(1);
   }
-  uint8_t adc_val = sum/10;
-  uint8_t glow_time = glow_data[adc_val];
+  uint16_t adc_val = sum/10;
+  uint32_t glow_time = glow_data[adc_val] * 1000;
   uint32_t safety_time = glow_time + safety_delay;
-  //enable crank interrupt
-  cli();
-  init_crank_interrupt();
-  init_millis();
-  sei();
-  //fire DO
-  PORTB |= (1<<PB4);
   
-  uint32_t start = millis();
-  while(millis() - start < safety_time) {
+  while(millis() < safety_time) {
 
-    if ((millis() - start) > glow_time) {
+    if (millis() > glow_time) {
       PORTB ^= (1<<PB4); //turn off relay and light
     }
     
     if (crank) {
+      //possibly put post crank glow here
       break;
     }
   }
-  //power down mode
+  //power down mode until power is cycled again
   MCUCR |= (1<<SM1);
 }
 
