@@ -6,14 +6,14 @@
 const uint8_t glow_data[256] = {30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,29,27,26,25,23,22,21,20,20,19,18,17,17,16,16,15,15,14,14,13,13,12,12,12,11,11,11,11,10,10,10,10,9,9,9,9,9,8,8,8,8,8,8,8,7,7,7,7,7,7,7,7,6,6,6,6,6,6,6,6,6,6,6,6,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,0,0,0,0,0,0,0,0,0};
 const uint32_t safety_delay = 30 * 1000;
 uint8_t crank = 0;
-volatile uint32_t timer1_millis;
+volatile uint32_t timer0_millis;
 
 ISR(PCINT0_vect) {
   crank = 1;
 }
 
-ISR(TIMER1_COMPA_vect) {
-  timer1_millis++;
+ISR(TIMER0_COMPA_vect) {
+  timer0_millis++;
 }
 
 void init_ADC()
@@ -50,10 +50,10 @@ void init_ADC()
             (1 << ADLAR) |     // left shift result
             (0 << REFS1) |     // Sets ref. voltage to VCC, bit 1
             (0 << REFS0) |     // Sets ref. voltage to VCC, bit 0
-            (0 << MUX3)  |     // use ADC2 for input (PB4), MUX bit 3
-            (0 << MUX2)  |     // use ADC2 for input (PB4), MUX bit 2
-            (1 << MUX1)  |     // use ADC2 for input (PB4), MUX bit 1
-            (0 << MUX0);       // use ADC2 for input (PB4), MUX bit 0
+            (0 << MUX3)  |     // use ADC3 for input (PB3), MUX bit 3
+            (0 << MUX2)  |     // use ADC3 for input (PB3), MUX bit 2
+            (1 << MUX1)  |     // use ADC3 for input (PB3), MUX bit 1
+            (1 << MUX0);       // use ADC3 for input (PB3), MUX bit 0
 
   ADCSRA = 
             (1 << ADEN)  |     // Enable ADC 
@@ -65,15 +65,12 @@ void init_ADC()
 }
 
 void init_millis() {
-  TCCR0A |= (1<<WGM01); // CTC mode
-  TCCR0A |= (1<<CS01) | (1<<CS00); //clock/64 scaler
-
-  OCR0A = 124;  //8000000/(1*64*1+OCR0A)
+  TCCR0A = (1<<WGM01); // CTC mode
+  TCCR0B |= (1<<CS01); //clock/8 scaler
+  OCR0A = 131;  //1000000/(1*8*1+OCR0A) adjusted for clock error
 
   // Enable the compare match interrupt
   TIMSK |= (1 << OCIE0A);
-
-  //REMEMBER TO ENABLE GLOBAL INTERRUPTS AFTER THIS WITH sei(); !!!
 }
 
 void init_crank_interrupt() {
@@ -84,17 +81,16 @@ void init_crank_interrupt() {
 unsigned long millis(void) {
   uint32_t millis_return;
   cli();
-  millis_return = timer1_millis;
+  millis_return = timer0_millis;
   sei();
   return millis_return;
 }
 
 int main() {
-  DDRB |= (1<<DDB4); //PB4 as output
-  PORTB |= (1<<PB4); // Turn on relay pin
-    
-  init_ADC();
+  DDRB |= (1<<DDB4) | (1<<PB0); //PB4 and PB0 as output
+  
   cli();
+  init_ADC();
   init_crank_interrupt();
   init_millis();
   sei();
@@ -107,26 +103,31 @@ int main() {
   while(count<10) {
     ADCSRA |= (1 << ADSC);         // start ADC measurement
     while (ADCSRA & (1 << ADSC) ); // wait till conversion complete 
-    sum += ADCH;  
+    sum += ADCH;
     count++;
     _delay_ms(1);
   }
-  uint16_t adc_val = sum/10;
+  uint8_t adc_val = sum/10;
   uint32_t glow_time = glow_data[adc_val] * 1000;
   uint32_t safety_time = glow_time + safety_delay;
-  
-  while(millis() < safety_time) {
+  uint32_t last_ms = 0;
 
-    if (millis() > glow_time) {
-      PORTB ^= (1<<PB4); //turn off relay and light
-    }
-    
-    if (crank) {
-      //possibly put post crank glow here
-      break;
+  if (glow_time > 0 ) {
+    PORTB |= (1<<PB4);
+    while(millis() < safety_time) {
+
+      if ((millis() > glow_time) | crank) {
+        break;
+      }
+      //heartbeat
+      if (millis() - last_ms > 500) {
+        PORTB ^= _BV(PB0);
+        last_ms = millis();
+      }
     }
   }
   //power down mode until power is cycled again
+  PORTB = 0; //turn off outputs
   MCUCR |= (1<<SM1);
 }
 
