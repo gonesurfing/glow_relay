@@ -74,8 +74,8 @@ void init_millis() {
 }
 
 void init_crank_interrupt() {
-  PCMSK |= (1 << PCINT3);
-  MCUCR |= (1 << ISC00 | (1 << ISC01)); //rising edge
+  PCMSK |= (1 << PCINT1); //PB6
+  GIMSK |= (1<<PCIE); //enable pin change interrupts
 }
 
 unsigned long millis(void) {
