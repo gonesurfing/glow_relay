@@ -7,6 +7,8 @@ This repository hosts the code for the Glow Relay project. It is meant as a DIY 
 More information can be found here:
 https://ww4et.net/blog/Re-Engineering-the-OM617-Glow-Plug-Relay
 
+Vehicle wiring varies by year. This is more of a reference than a finished product. Use at your own risk.
+
 ## Getting Started
 
 ### Prerequisites
